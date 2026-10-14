@@ -149,7 +149,6 @@ Error codes: `VALIDATION` and `UNKNOWN_LAWYER` (400), `NOT_FOUND` (404), `REVIEW
 - The selector is stored in this browser (`lexroom-lawyer-id`). Every browser sees the same reviews.
 - Uploads, document parsing, billing, and a real model are out of scope.
 - The worker is a separate process. It is not started by the web server.
-- The embedded server is a local convenience. Production would use a managed Postgres instance and a supervised worker.
 - `npm run verify` is the concurrency check. There is no browser test suite.
 
 ## Time spent
