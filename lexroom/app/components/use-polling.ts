@@ -4,6 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 
 export const POLL_MS = 1500;
 
+const refreshListeners = new Set<() => void>();
+
+/** Ask every polling view to reload. Used after the workspace reviews are cleared. */
+export function refreshWorkspace() {
+  for (const listener of refreshListeners) listener();
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: "no-store" });
   const body: unknown = await response.json().catch(() => null);
@@ -55,15 +62,19 @@ export function usePolling<T>(url: string | null, intervalMs: number | null) {
     };
 
     run();
+    const unsubscribe = () => refreshListeners.delete(run);
+    refreshListeners.add(run);
     if (intervalMs === null) {
       return () => {
         cancelled = true;
+        unsubscribe();
       };
     }
     const id = setInterval(run, intervalMs);
     return () => {
       cancelled = true;
       clearInterval(id);
+      unsubscribe();
     };
   }, [url, intervalMs]);
 

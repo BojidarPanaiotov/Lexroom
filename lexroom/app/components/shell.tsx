@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useContext, useState, useSyncExternalStore } from "react";
 import { formatDateTime } from "@/lib/time";
 import type { LawyerDTO, UsageDTO } from "@/lib/types";
-import { POLL_MS, usePolling } from "./use-polling";
+import { POLL_MS, refreshWorkspace, usePolling } from "./use-polling";
 
 const STORAGE_KEY = "lexroom-lawyer-id";
 const EMPTY_LAWYERS: LawyerDTO[] = [];
@@ -57,6 +57,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
     writeStoredLawyerId(id);
   }
   const usage = usageQuery.data;
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  async function resetReviews() {
+    const confirmed = window.confirm(
+      "Clear every review? Usage returns to 0. Documents and lawyers stay.",
+    );
+    if (!confirmed) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      const response = await fetch("/api/reviews/reset", { method: "POST" });
+      const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setResetError(body?.error ?? "Reviews could not be cleared.");
+        return;
+      }
+      refreshWorkspace();
+    } catch {
+      setResetError("The request could not be sent.");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <WorkspaceContext.Provider
@@ -97,6 +121,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 </select>
               </label>
               <UsageSummary usage={usage} error={usageQuery.error} loading={usageQuery.loading} />
+              <div className="flex flex-col items-start gap-1">
+                <button
+                  type="button"
+                  className="rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:text-stone-400"
+                  onClick={() => void resetReviews()}
+                  disabled={resetting}
+                >
+                  {resetting ? "Resetting…" : "Reset reviews"}
+                </button>
+                {resetError && (
+                  <p className="max-w-64 text-sm text-rose-800" role="alert">
+                    {resetError}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           {usage && usage.remaining === 0 && (

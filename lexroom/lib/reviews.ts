@@ -445,6 +445,12 @@ export async function getDocument(id: string): Promise<DocumentDetailDTO | null>
   };
 }
 
+/** Deletes every review. Findings are removed with them. Lawyers and documents stay. */
+export async function resetReviews(): Promise<{ deleted: number; usage: UsageDTO }> {
+  const deleted = await prisma.review.deleteMany();
+  return { deleted: deleted.count, usage: await getUsage() };
+}
+
 export async function getReview(id: string): Promise<ReviewDTO | null> {
   await expireOverdueReviews();
   const review = await prisma.review.findUnique({
