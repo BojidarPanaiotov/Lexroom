@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One of the three lawyers who share the workspace. There is no login.
+model Lawyer {
+  id        String     @id
+  name      String
+  title     String
+  documents Document[] @relation("UploadedBy")
+  reviews   Review[]
+}
+
+/// A workspace document. `expectedFindings` is the simulated AI output from samples/documents.json.
+model Document {
+  id               String     @id
+  title            String
+  type             String
+  pages            Int
+  uploadedAt       DateTime   @db.Timestamptz(3)
+  uploadedById     String
+  uploadedBy       Lawyer     @relation("UploadedBy", fields: [uploadedById], references: [id])
+  supersedesId     String?
+  supersedes       Document?  @relation("DocumentVersion", fields: [supersedesId], references: [id])
+  supersededBy     Document[] @relation("DocumentVersion")
+  expectedFindings Json
+  reviews          Review[]
+
+  @@index([uploadedById])
+  @@index([supersedesId])
+}
+
+enum ReviewStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+/// One request for an AI review. Retries insert a new row; they never update an older one.
+model Review {
+  id             String       @id @default(uuid())
+  documentId     String
+  document       Document     @relation(fields: [documentId], references: [id])
+  lawyerId       String
+  lawyer         Lawyer       @relation(fields: [lawyerId], references: [id])
+  status         ReviewStatus @default(pending)
+  /// Document id while the review is pending or running; null once it has finished.
+  /// The unique constraint is the one-active-review-per-document rule.
+  activeDocumentId String?   @unique
+  requestedAt    DateTime     @default(now()) @db.Timestamptz(3)
+  completedAt    DateTime?    @db.Timestamptz(3)
+  failedAt       DateTime?    @db.Timestamptz(3)
+  errorMessage   String?      @db.Text
+  /// `timeout` or `service_error`. Null unless the review failed.
+  failureCode    String?
+  /// Schedule the worker follows. Late events are ignored once the deadline has passed.
+  simulationPlan Json
+  findings       Finding[]
+
+  @@index([documentId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([lawyerId])
+}
+
+/// A single issue returned by the simulated reviewer. Sequence preserves arrival order.
+model Finding {
+  id          String   @id @default(uuid())
+  reviewId    String
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  sequence    Int
+  clause      String?
+  title       String
+  severity    String
+  excerpt     String?  @db.Text
+  explanation String   @db.Text
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([reviewId, sequence])
+}
