@@ -22,9 +22,9 @@ export type FindingDTO = {
   createdAt: string;
 };
 
-export type ReviewDTO = {
+/** Fields shared by a full review and the short review on the document list. */
+export type ReviewBaseDTO = {
   id: string;
-  documentId: string;
   status: ReviewStatus;
   requestedAt: string;
   completedAt: string | null;
@@ -33,20 +33,17 @@ export type ReviewDTO = {
   errorMessage: string | null;
   failureCode: FailureCode | null;
   lawyer: LawyerDTO;
+};
+
+/** Full review, including each finding. */
+export type ReviewDTO = ReviewBaseDTO & {
+  documentId: string;
   findings: FindingDTO[];
   findingsLabel: FindingsLabel;
 };
 
-export type ReviewSummaryDTO = {
-  id: string;
-  status: ReviewStatus;
-  requestedAt: string;
-  completedAt: string | null;
-  failedAt: string | null;
-  deadlineAt: string;
-  errorMessage: string | null;
-  failureCode: FailureCode | null;
-  lawyer: LawyerDTO;
+/** Short summary of a review, used on the document list. */
+export type ReviewSummaryDTO = ReviewBaseDTO & {
   findingCount: number;
 };
 

@@ -35,7 +35,7 @@ function activeReviewMessage(lawyerName: string, requestedAt: Date): string {
   return `This document already has a review in progress, requested by ${lawyerName} on ${formatDateTime(requestedAt)}. Only one review can run on a document at a time. Wait for it to finish or fail.`;
 }
 
-function intervalAfter(timeoutMs: number) {
+function toPostgresInterval(timeoutMs: number) {
   return Prisma.sql`${timeoutMs} * INTERVAL '1 millisecond'`;
 }
 
@@ -51,19 +51,19 @@ export async function databaseNow(client: Db = prisma): Promise<Date> {
  * The deadline is `requestedAt + timeout`, not the moment this statement runs.
  * Rows that are already completed or failed are left untouched.
  */
-export async function expireOverdueReviews(client: Db = prisma): Promise<number> {
+async function failTimedOutReviews(client: Db = prisma): Promise<number> {
   const timeoutMs = getSimulationConfig().timeoutMs;
   const message = timeoutMessage(timeoutMs);
   return client.$executeRaw`
     UPDATE "Review"
     SET
       status = 'failed'::"ReviewStatus",
-      "failedAt" = "requestedAt" + ${intervalAfter(timeoutMs)},
+      "failedAt" = "requestedAt" + ${toPostgresInterval(timeoutMs)},
       "errorMessage" = ${message},
       "failureCode" = 'timeout',
       "activeDocumentId" = NULL
     WHERE status IN ('pending'::"ReviewStatus", 'running'::"ReviewStatus")
-      AND "requestedAt" + ${intervalAfter(timeoutMs)} <= clock_timestamp()
+      AND "requestedAt" + ${toPostgresInterval(timeoutMs)} <= clock_timestamp()
   `;
 }
 
@@ -73,7 +73,7 @@ export async function claimPendingReviews(client: Db = prisma): Promise<number> 
     UPDATE "Review"
     SET status = 'running'::"ReviewStatus"
     WHERE status = 'pending'::"ReviewStatus"
-      AND "requestedAt" + ${intervalAfter(timeoutMs)} > clock_timestamp()
+      AND "requestedAt" + ${toPostgresInterval(timeoutMs)} > clock_timestamp()
   `;
 }
 
@@ -91,7 +91,7 @@ export async function completeIfActive(reviewId: string, client: Db = prisma): P
       "activeDocumentId" = NULL
     WHERE id = ${reviewId}
       AND status IN ('pending'::"ReviewStatus", 'running'::"ReviewStatus")
-      AND "requestedAt" + ${intervalAfter(timeoutMs)} > clock_timestamp()
+      AND "requestedAt" + ${toPostgresInterval(timeoutMs)} > clock_timestamp()
   `;
 }
 
@@ -111,7 +111,7 @@ async function failIfActive(
       "activeDocumentId" = NULL
     WHERE id = ${reviewId}
       AND status IN ('pending'::"ReviewStatus", 'running'::"ReviewStatus")
-      AND "requestedAt" + ${intervalAfter(timeoutMs)} > clock_timestamp()
+      AND "requestedAt" + ${toPostgresInterval(timeoutMs)} > clock_timestamp()
   `;
 }
 
@@ -149,7 +149,7 @@ async function insertFindingIfActive(
       FROM "Review"
       WHERE "id" = ${reviewId}
         AND status IN ('pending'::"ReviewStatus", 'running'::"ReviewStatus")
-        AND "requestedAt" + ${intervalAfter(timeoutMs)} > clock_timestamp()
+        AND "requestedAt" + ${toPostgresInterval(timeoutMs)} > clock_timestamp()
     )
     ON CONFLICT ("reviewId", "sequence") DO NOTHING
     RETURNING "id"
@@ -176,7 +176,7 @@ export function parseFindingTemplates(value: unknown): FindingTemplate[] {
   });
 }
 
-export async function advanceRunningReviews(client: Db = prisma): Promise<void> {
+export async function applySimulatedReviews(client: Db = prisma): Promise<void> {
   const timeoutMs = getSimulationConfig().timeoutMs;
   const now = await databaseNow(client);
   const reviews = await client.review.findMany({
@@ -243,7 +243,7 @@ export async function advanceRunningReviews(client: Db = prisma): Promise<void> 
 }
 
 export async function tick(): Promise<void> {
-  const expired = await expireOverdueReviews();
+  const expired = await failTimedOutReviews();
   if (expired > 0) {
     console.log(`[worker] marked ${expired} overdue review(s) as failed`);
   }
@@ -251,7 +251,7 @@ export async function tick(): Promise<void> {
   if (claimed > 0) {
     console.log(`[worker] started ${claimed} review(s)`);
   }
-  await advanceRunningReviews();
+  await applySimulatedReviews();
 }
 
 async function countUsage(
@@ -274,7 +274,7 @@ async function countUsage(
 }
 
 export async function getUsage(): Promise<UsageDTO> {
-  await expireOverdueReviews();
+  await failTimedOutReviews ();
   const bounds = getMonthBounds(await databaseNow());
   return toUsage(await countUsage(prisma, bounds), bounds);
 }
@@ -291,7 +291,7 @@ export async function startReview(input: {
   lawyerId: string;
   simulation?: SimulationOverride;
 }): Promise<StartedReviewDTO> {
-  await expireOverdueReviews();
+  await failTimedOutReviews ();
   const timeoutMs = getSimulationConfig().timeoutMs;
 
   try {
@@ -299,7 +299,7 @@ export async function startReview(input: {
       async (tx) => {
         // Serialises quota checks so two lawyers cannot both take the last place.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(872341, 1)`;
-        await expireOverdueReviews(tx);
+        await failTimedOutReviews (tx);
 
         const lawyer = await tx.lawyer.findUnique({ where: { id: input.lawyerId } });
         if (!lawyer) {
@@ -417,7 +417,7 @@ export async function listLawyers() {
 }
 
 export async function getDocuments(): Promise<DocumentSummaryDTO[]> {
-  await expireOverdueReviews();
+  await failTimedOutReviews ();
   const documents = await prisma.document.findMany({
     orderBy: { uploadedAt: "desc" },
     include: documentInclude,
@@ -426,7 +426,7 @@ export async function getDocuments(): Promise<DocumentSummaryDTO[]> {
 }
 
 export async function getDocument(id: string): Promise<DocumentDetailDTO | null> {
-  await expireOverdueReviews();
+  await failTimedOutReviews ();
   const document = await prisma.document.findUnique({
     where: { id },
     include: documentInclude,
@@ -452,7 +452,7 @@ export async function resetReviews(): Promise<{ deleted: number; usage: UsageDTO
 }
 
 export async function getReview(id: string): Promise<ReviewDTO | null> {
-  await expireOverdueReviews();
+  await failTimedOutReviews ();
   const review = await prisma.review.findUnique({
     where: { id },
     include: reviewWithFindings,

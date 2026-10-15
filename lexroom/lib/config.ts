@@ -61,7 +61,3 @@ export function getSimulationConfig(): SimulationConfig {
 
   return config;
 }
-
-export function timeoutSeconds(timeoutMs = getSimulationConfig().timeoutMs): number {
-  return Math.round(timeoutMs / 1000);
-}
