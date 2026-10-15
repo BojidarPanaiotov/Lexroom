@@ -12,13 +12,15 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "test": "tsx --test lib/*.test.ts",
-    "verify": "tsx --env-file=.env scripts/verify.ts"
+    "verify": "tsx --env-file=.env scripts/verify.ts",
+    "app": "concurrently -n db,web,worker \"npm run db\" \"npm run dev\" \"npm run worker\""
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "concurrently": "^10.0.6",
     "next": "16.4.0",
     "prisma": "^6.19.3",
     "react": "19.3.0",
