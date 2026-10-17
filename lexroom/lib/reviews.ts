@@ -67,7 +67,7 @@ async function failTimedOutReviews(client: Db = prisma): Promise<number> {
   `;
 }
 
-export async function claimPendingReviews(client: Db = prisma): Promise<number> {
+export async function startPendingReviews(client: Db = prisma): Promise<number> {
   const timeoutMs = getSimulationConfig().timeoutMs;
   return client.$executeRaw`
     UPDATE "Review"
@@ -247,7 +247,7 @@ export async function tick(): Promise<void> {
   if (expired > 0) {
     console.log(`[worker] marked ${expired} overdue review(s) as failed`);
   }
-  const claimed = await claimPendingReviews();
+  const claimed = await startPendingReviews();
   if (claimed > 0) {
     console.log(`[worker] started ${claimed} review(s)`);
   }
